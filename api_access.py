@@ -4,7 +4,7 @@ import requests
 from requests.auth import HTTPDigestAuth
 from xml.etree import ElementTree
 
-from dev import TRIAL_ID_URL
+from dev import TRIAL_ID_URL, AUTH_USER, AUTH_PASS
 
 
 def parse_xml_for_trial_id(res_content):
@@ -26,7 +26,7 @@ def get_trial_ids(url, offset=None):
     if not offset:
         offset = 0
     res = requests.get(
-        url, auth=HTTPDigestAuth('MassInstech_001', 'FO72K93VSX5PI4BG'), params={
+        url, auth=HTTPDigestAuth( AUTH_USER, AUTH_PASS), params={
         'query': 'trialDateChangeLast:RANGE(%3E1900-09-16)',
         'hits': 500,
         'queryLanguage': 'ssql',
@@ -35,8 +35,6 @@ def get_trial_ids(url, offset=None):
     if res.status_code != requests.codes.ok:
         print res.url
         print res.status_code
-        print res.content
-        print offset
         return (res.status_code, offset, None)
     return (res.status_code, offset, parse_xml_for_trial_id(res.content))
 
