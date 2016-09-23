@@ -4,9 +4,7 @@ import requests
 from requests.auth import HTTPDigestAuth
 from xml.etree import ElementTree
 
-URL = 'https://origin-edc-lsapi.thomson-pharma.com/ls-api-ws/ws/rs/auth-v2'
-TRIAL_ID_URL = 'https://lsapi.thomson-pharma.com/ls-api-ws/ws/rs/trials-v2/trial/search/?query=trialDateChangeLast:RANGE(%3E1900-09-16)&hits=1000&queryLanguage=ssql'
-# TRIAL_ID_URL = 'https://lsapi.thomson-pharma.com/ls-api-ws/ws/rs/trials-v2/trial/search'
+from dev import TRIAL_ID_URL
 
 
 def parse_xml_for_trial_id(res_content):
@@ -20,14 +18,13 @@ def parse_xml_for_trial_id(res_content):
         # flatten list of trial ids and return
         return trial_ids['Id']
     except KeyError as e:
-        print tscrial_ids
-        print e
+        print trial_ids, e
         return None
 
 
 def get_trial_ids(url, offset=None):
     if not offset:
-        offset=0
+        offset = 0
     res = requests.get(
         url, auth=HTTPDigestAuth('MassInstech_001', 'FO72K93VSX5PI4BG'), params={
         'query': 'trialDateChangeLast:RANGE(%3E1900-09-16)',
