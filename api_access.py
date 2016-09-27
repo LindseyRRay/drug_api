@@ -2,9 +2,12 @@ import funcy
 import multiprocessing
 import requests
 from requests.auth import HTTPDigestAuth
+import numpy as np
+import pandas as pd
+import os
 from xml.etree import ElementTree
 
-from dev import TRIAL_ID_URL, AUTH_USER, AUTH_PASS
+from dev import TRIAL_ID_URL, AUTH_USER, AUTH_PASS, TRIAL_XML_DIR, STORAGE_DIR
 
 
 def parse_xml_for_trial_id(res_content):
@@ -51,9 +54,19 @@ def paginate_trial_ids(start):
 
 
 # for all results, get trial ids
-def batch_process_requests():
+def batch_process_requests(to_ignore_trial_ids):
     # set up pool of processes
-    pool = multiprocessing.Pool(processes=5)
-    results = pool.map(paginate_trial_ids, xrange(0, 250000, 50000))
-    print len(results)
+    pool = multiprocessing.Pool(processes=10)
+    results = pool.map(paginate_trial_ids, xrange(0, 250000, 25000))
     return results
+
+
+def read_in_trials_filter(trial_ids_file, trial_xml_dir):
+    trial_ids = pd.read_csv(os.path.join(STORAGE_DIR, 'TrialIds.csv'))
+    # check for already downloaded trials
+    existing_trial_ids = [f.split('.xml')[0] for f in os.listdir(TRIAL_XML_DIR) if f.endswith('.xml')]
+    existing_trial_ints = map(int, existing_trial_ids)
+    to_download = set(trial_ids.values).difference(set(existing_trial_ids))
+    print 'Need to download {} more trial ids'.format(len(to_download))
+
+
