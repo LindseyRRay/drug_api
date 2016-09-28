@@ -1,4 +1,5 @@
 import funcy
+import time
 import multiprocessing
 import requests
 from requests.auth import HTTPDigestAuth
@@ -7,7 +8,8 @@ import pandas as pd
 from xml.etree import ElementTree
 import os
 
-from dev import TRIAL_ID_URL, TRIAL_INFO_URL, AUTH_USER, AUTH_PASS, TRIAL_XML_DIR, STORAGE_DIR
+from dev import (TRIAL_ID_URL, TRIAL_INFO_URL, AUTH_USER, AUTH_PASS,
+                    TRIAL_XML_DIR, DRUG_XML_DIR, STORAGE_DIR, DRUG_IDS_FNAME, TRIAL_IDS_FNAME, DRUG_INFO_URL)
 
 
 def parse_xml_for_trial_id(res_content):
@@ -75,61 +77,111 @@ def compile_ids_output(request_res, filename=None, directory=None):
     ser.to_csv(path, index=False)
 
 
-def store_xml(trial_id, res_content, DIR=TRIAL_XML_DIR):
+def store_xml(trial_id, res_content, storage_dir):
     # parse and store trial xml
     # save content as xml tree
     tree = ElementTree.fromstring(res_content)
     # convert to a tree
     t2 = ElementTree.ElementTree(tree)
     # write to .xml
-    with open(os.path.join(DIR, '{}.xml'.format(trial_id)), 'w') as f:
+    with open(os.path.join(storage_dir, '{}.xml'.format(trial_id)), 'w') as f:
         t2.write(f)
 
 
 def search_trial_id(trial_id):
     # get trial information for each trial id
     params = {'idList': trial_id}
+    print trial_id
     res = requests.get(TRIAL_INFO_URL, auth=HTTPDigestAuth(AUTH_USER, AUTH_PASS), params=params)
+    print res.status_code
     if res.status_code != requests.codes.ok:
         print res.status_code
         return (res.status_code, trial_id, None)
     # get xml info and save
-    return (res.status_code, trial_id, store_xml(trial_id, res.content))
+    store_xml(trial_id, res.content, TRIAL_XML_DIR)
+    return (res.status_code, trial_id)
 
 
-def get_trial_info(trial_ids):
-    # map the search trial id function to a list of ids
-    res = map(search_trial_id, trial_ids)
+def read_ids(filename):
+    ids = pd.read_csv(os.path.join(STORAGE_DIR, filename))
+    ids_arr = ids.iloc[:, 0].values
+    print len(ids_arr)
+    assert isinstance(ids_arr[0], int)
+    return ids_arr
 
 
 def read_trial_ids(filename=None):
     # read a previously downloads csv of trial ids
     if not filename:
-        filename = 'TrialIds.csv'
-    trial_ids = pd.read_csv(os.path.join(TRIAL_XML_DIR, filename))
-    trial_ids_arr = trial_ids.TrialId.values
-    print len(trial_ids_arr)
-    return trial_ids_arr
+        filename = TRIAL_IDS_FNAME
+    return read_ids(filename)
 
 
-def batch_process_xml_download(trial_ids):
+def read_drug_ids(filename=None):
+    # read a previously downloads csv of trial ids
+    if not filename:
+        filename = DRUG_IDS_FNAME
+    return read_ids(filename)
+
+
+def batch_process_xml_download(download_fnc, ids):
     # set up multiprocess pool
     # create pool of processes
-    pool = multiprocessing.Pool(processes=10)
-    chunk_size = int(len(trial_ids)/10)+1
-    print chunk_size
-    results = pool.map(get_trial_info, funcy.chunks(chunk_size, trial_ids))
-    print len(results)
-    return results
+    start = time.time()
+    pool = multiprocessing.Pool(processes=4)
+    # using imap unorded because I don't care about order and don't want to take memory hit
+    # putting list of all ids in memory
+    for x in pool.imap_unordered(download_fnc, ids, chunksize=50):
+        print("{} (Time elapsed: {}s)".format(x, int(time.time() - start)))
 
 
-def read_in_trials_filter(trial_ids_file, trial_xml_dir):
-    trial_ids = pd.read_csv(os.path.join(STORAGE_DIR, 'TrialIds.csv'))
+def check_for_existing_downloads(download_dir, total_ids):
+    existing_ids = [f.split('.xml')[0] for f in os.listdir(download_dir) if f.endswith('.xml')]
+    existing_ints = map(int, existing_ids)
+    to_download = list(set(total_ids).difference(set(existing_ints)))
+    print 'Need to download {} more ids'.format(len(to_download))
+    return to_download
+
+
+def download_trial_records(trial_ids_file=None):
+    trial_ids = read_trial_ids(trial_ids_file)
     # check for already downloaded trials
-    existing_trial_ids = [f.split('.xml')[0] for f in os.listdir(TRIAL_XML_DIR) if f.endswith('.xml')]
-    existing_trial_ints = map(int, existing_trial_ids)
-    to_download = set(trial_ids.values).difference(set(existing_trial_ids))
-    print 'Need to download {} more trial ids'.format(len(to_download))
+    to_download = check_for_existing_downloads(TRIAL_XML_DIR, trial_ids)
+    print type(to_download[0])
+    print to_download
+    if len(to_download) < 1000:
+        res = map(search_trial_id, to_download)
+        return res
+    else:
+    # return to_download
+        return batch_process_xml_download(search_trial_id, to_download)
 
+
+def search_drug_id(drug_id):
+    params = {'includeSources': 1}
+    print drug_id
+    res = requests.get(
+        DRUG_INFO_URL.format(drugId=drug_id), auth=HTTPDigestAuth(AUTH_USER, AUTH_PASS), params=params)
+    print res.status_code
+    if res.status_code != requests.codes.ok:
+        print res.status_code
+        return (res.status_code, drug_id, None)
+    # get xml info and save
+    store_xml(drug_id, res.content, DRUG_XML_DIR)
+    return (res.status_code, drug_id)
+
+
+def download_drug_records(drug_ids_file=None):
+    drug_ids = read_drug_ids(drug_ids_file)
+    # check if any existing drugs have already been downloaded
+    to_download = check_for_existing_downloads(DRUG_XML_DIR, drug_ids)
+    print type(to_download[0])
+    print to_download
+    if len(to_download) < 1000:
+        res = map(search_drug_id, to_download)
+        return res
+    else:
+        # return to_download
+        return batch_process_xml_download(search_drug_id, to_download)
 
 
